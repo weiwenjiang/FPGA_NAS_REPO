@@ -42,8 +42,9 @@ def search_space():#搜索剪枝空间
 		space[key] = temp
 	return space
 
+space = search_space()
+
 def get_pattern(str):#可以输入0或1-9的组合，例如：‘0’表示不剪枝，‘12345’表示剪枝12345位置的weight，顺序需要从大到小
-	space = search_space()
 	# print(space)
 	return space[str]
 

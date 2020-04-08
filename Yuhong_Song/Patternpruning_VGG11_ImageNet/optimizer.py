@@ -375,9 +375,8 @@ class PruneAdam(NameOptimizer):
                 exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, grad, grad)#二阶距估计
 
                 a = name.split('.')[0]
-                b = name.split('.')[1]
                 c = name.split('.')[2]
-                if a == "features" and c == "weight" and b == "0":
+                if a == "features" and c == "weight":
                     exp_avg.mul_(mask[name])#exp_avg *= mask[name]
                     exp_avg_sq.mul_(mask[name])#exp_avg_sq *= mask[name]
 

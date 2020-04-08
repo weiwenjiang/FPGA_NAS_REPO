@@ -20,7 +20,7 @@ except ImportError:
 
 
 #一次迭代过程
-def train_one_epoch(model, criterion, optimizer,mask, data_loader, device, epoch, print_freq, apex=False):
+def train_one_epoch(model, criterion, optimizer, mask, data_loader, device, epoch, print_freq, apex=False):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ") 
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
@@ -33,14 +33,13 @@ def train_one_epoch(model, criterion, optimizer,mask, data_loader, device, epoch
         output = model(image)
         loss = criterion(output, target)
 
-        optimizer.zero_grad()
+        optimizer.zero_grad()#梯度置为0
         if apex:
             with amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
         else:
-            loss.backward()
+            loss.backward()#前向传播
         optimizer.prune_step(mask)#剪枝优化器
-        # optimizer.step()#SGD优化器
 
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
         batch_size = image.shape[0]
@@ -82,16 +81,17 @@ def _get_cache_path(filepath):
     h = hashlib.sha1(filepath.encode()).hexdigest()#使用SHA1算法进行字符加密
     cache_path = os.path.join("~", ".torch", "vision", "datasets", "imagefolder", h[:10] + ".pt")
     cache_path = os.path.expanduser(cache_path)
+    print("cache_path:",cache_path)
     return cache_path
 
 #加载数据
 def load_data(traindir, valdir, cache_dataset, distributed):
     # Data loading code
-    print("Loading data")
+    print("--Loading data--")
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    print("Loading training data")
+    print("1.Loading training data")
     st = time.time()
     cache_path = _get_cache_path(traindir)
     if cache_dataset and os.path.exists(cache_path):
@@ -102,8 +102,8 @@ def load_data(traindir, valdir, cache_dataset, distributed):
         dataset = torchvision.datasets.ImageFolder(
             traindir,
             transforms.Compose([
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
+                transforms.RandomResizedCrop(224),#随机裁剪
+                transforms.RandomHorizontalFlip(),#随机水平翻转
                 transforms.ToTensor(),
                 normalize,
             ]))
@@ -113,7 +113,7 @@ def load_data(traindir, valdir, cache_dataset, distributed):
             utils.save_on_master((dataset, traindir), cache_path)
     print("Loading training data Time", time.time() - st)
 
-    print("Loading validation data")
+    print("2.Loading validation data")
     cache_path = _get_cache_path(valdir)
     if cache_dataset and os.path.exists(cache_path):
         # Attention, as the transforms are also cached!
@@ -133,7 +133,7 @@ def load_data(traindir, valdir, cache_dataset, distributed):
             utils.mkdir(os.path.dirname(cache_path))
             utils.save_on_master((dataset_test, valdir), cache_path)
 
-    print("Creating data loaders")
+    print("3.Creating data loaders")
     if distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
         test_sampler = torch.utils.data.distributed.DistributedSampler(dataset_test)
@@ -215,7 +215,6 @@ def modify_model(vgg):
     return vgg
 
 
-
 def main(args):
     if args.apex:#混合精度训练
         if sys.version_info < (3, 0):
@@ -234,8 +233,9 @@ def main(args):
 
     torch.backends.cudnn.benchmark = True#为整个网络的每个卷积层搜索最适合它的卷积实现算法，进而实现网络的加速
 
-    train_dir = os.path.join(args.data_path, 'train')
+    train_dir = os.path.join(args.data_path, 'train')#路径拼接，data_path\train
     val_dir = os.path.join(args.data_path, 'val')
+    #加载数据
     dataset, dataset_test, train_sampler, test_sampler = load_data(train_dir, val_dir,
                                                                    args.cache_dataset, args.distributed)
     data_loader = torch.utils.data.DataLoader(
@@ -245,34 +245,23 @@ def main(args):
     data_loader_test = torch.utils.data.DataLoader(
         dataset_test, batch_size=args.batch_size,
         sampler=test_sampler, num_workers=args.workers, pin_memory=True)
-
-    print("Creating model")
+    #创建模型
+    print("--Creating model--")
     model = torchvision.models.__dict__[args.model](pretrained=args.pretrained)
-
-    # model = modify_model(model)
 
     model.to(device)
     if args.distributed and args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-    criterion = nn.CrossEntropyLoss()
-
-    #随机梯度下降优化算法
-    # optimizer = torch.optim.SGD(
-        # model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
-    #使用剪枝优化器
-    optimizer = PruneAdam(model.named_parameters(), lr=args.lr, eps=args.adam_epsilon)
+    criterion = nn.CrossEntropyLoss()#交叉熵损失函数，对分类问题有用
+    optimizer = PruneAdam(model.named_parameters(), lr=args.lr, eps=args.adam_epsilon)#使用剪枝优化器
+    mask = utils.apply_pattern_prune(model,device,'19')#选择剪枝标准,可以输入0或者其他1-9的组合
 
     if args.apex:#使用混合精度训练
         model, optimizer = amp.initialize(model, optimizer,
-                                          opt_level=args.apex_opt_level
-                                          )
-    #调整学习率
-    # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step_size, gamma=args.lr_gamma)
-
+                                          opt_level=args.apex_opt_level)
     model_without_ddp = model
-    if args.distributed:
+    if args.distributed:#分布式训练
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
 
@@ -280,37 +269,23 @@ def main(args):
         checkpoint = torch.load(args.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        # lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         args.start_epoch = checkpoint['epoch'] + 1
 
     if args.test_only:#只测试模型
         evaluate(model, criterion, data_loader_test, device=device)
         return
-
-    mask = utils.apply_pattern_prune(model,device,'19')#选择剪枝标准,可以输入0或者其他1-9的组合
-    # print(mask)
-    # for name,param in model.named_parameters():
-    #     a = name.split('.')[0]
-    #     b = name.split('.')[1]
-    #     c = name.split('.')[2]
-    #     if a == "features" and c == "weight" and b == "0":
-    #     	print(param.data)
-
-    print("Start training")
+    #开始训练
+    print("--Start training--")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
-
-        # train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args.print_freq, args.apex)
         train_one_epoch(model, criterion, optimizer, mask, data_loader, device, epoch, args.print_freq, args.apex)
-        # lr_scheduler.step()
         evaluate(model, criterion, data_loader_test, device=device)#测试
         if args.output_dir:#保存路径
             checkpoint = {
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                # 'lr_scheduler': lr_scheduler.state_dict(),
                 'epoch': epoch,
                 'args': args}
             utils.save_on_master(
@@ -329,15 +304,15 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='PyTorch Classification Training')
 
-    parser.add_argument('--data-path', default='/mnt/weiwen/ImageNet', help='dataset')
+    parser.add_argument('--data-path', default='/dataset/imagenet', help='dataset')
     parser.add_argument('--model', default='vgg11', help='model')
     parser.add_argument('--device', default='cuda', help='device')
-    parser.add_argument('-b', '--batch-size', default=32, type=int)
-    parser.add_argument('--epochs', default=90, type=int, metavar='N',
+    parser.add_argument('-b', '--batch-size', default=256, type=int)
+    parser.add_argument('--epochs', default=30, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=16, type=int, metavar='N',
                         help='number of data loading workers (default: 16)')
-    parser.add_argument('--lr', default=0.1, type=float, help='initial learning rate')
+    parser.add_argument('--lr', default=1e-3, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum')
     parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
@@ -350,7 +325,7 @@ def parse_args():
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                         help='start epoch')
-    parser.add_argument('--adam_epsilon', type=float, default=1e-8, metavar='E',#？
+    parser.add_argument('--adam_epsilon', type=float, default=1e-8, metavar='E',#避免除数为0
                         help='adam epsilon (default: 1e-8)')
     parser.add_argument(
         "--cache-dataset",

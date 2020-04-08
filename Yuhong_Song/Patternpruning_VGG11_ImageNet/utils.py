@@ -162,7 +162,7 @@ class MetricLogger(object):
 
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
+    with torch.no_grad():#不更新梯度
         maxk = max(topk)
         batch_size = target.size(0)
 
@@ -276,7 +276,7 @@ def apply_pattern_prune(model,device,str):#根据pattern剪枝
         a = name.split('.')[0]
         b = name.split('.')[1]
         c = name.split('.')[2]
-        if a == "features" and c == "weight" and b == "0":
+        if a == "features" and c == "weight":
             key = int(b)
             mask = prune_pattern_weight(param,device,str,key)
             param.data.mul_(mask)#model参数数据的对应位置变为0
