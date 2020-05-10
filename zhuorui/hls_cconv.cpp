@@ -3,6 +3,7 @@
 void LOAD_WEIGHT_128B(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 						FPGA_DATA_FIX WEIGHT1[2][Tm][Tn][K][K],
 						int custom_k,
+						int custom_s,
 						int custom_Tm,
 						int custom_Tn
 						){
@@ -62,10 +63,11 @@ void LOAD_WEIGHT_128B(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 
 
 void LOAD_IFM(hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
-		FPGA_DATA_FIX IFM[2][Tn_8][Tr+K-1][Tc+K-1],
+		FPGA_DATA_FIX IFM[2][Tn_8][2*(Tr-1)+K][2*(Tc-1)+K],//Cannot replace 2 with custom_s here, could it be a problem? Same issue with K and custom_k
 		int custom_Tr,
 		int custom_Tc,
 		int custom_k,
+		int custom_s,
 		int custom_Tn
 		){
 
@@ -74,8 +76,8 @@ void LOAD_IFM(hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
 	// Weiwen-01-23: Fix bug custom_Tr+K-1 ---> custom_Tr+custom_k-1 for self-defined K
 	DMA_DATA_128B_FIX ifm_input_dma;
 	ifm1:for(int i=0;i<divided_Tn_8;i++){
-		ifm2:for(int j=0;j<custom_Tr+custom_k-1;j++){
-			ifm3:for(int m=0;m<custom_Tc+custom_k-1;m++){
+		ifm2:for(int j=0;j<(custom_Tr-1)*custom_s+custom_k;j++){        //change
+			ifm3:for(int m=0;m<(custom_Tc-1)*custom_s+custom_k;m++){   //change
 #pragma HLS PIPELINE II=1
 				ifm_input_dma=input_dma_I.read();
 				if(i*8<custom_Tn){
@@ -117,11 +119,12 @@ void LOAD_IFM(hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
 
 
 void FIRE(  FPGA_DATA_FIX WEIGHT1[2][Tm][Tn][K][K],
-			FPGA_DATA_FIX IFM[2][Tn_8][Tr+K-1][Tc+K-1],
+			FPGA_DATA_FIX IFM[2][Tn_8][2*(Tr-1)+K][2*(Tc-1)+K],//Cannot replace 2 with custom_s here, could it be a problem? Same issue with K and custom_k
 			FPGA_DATA_FIX OFM[Tm][Tr][Tc],
 			int row,
 			int col,
 			int custom_k,
+			int custom_s,
 			int custom_Tr,
 			int custom_Tc,
 			int custom_Tm,
@@ -141,9 +144,9 @@ void FIRE(  FPGA_DATA_FIX WEIGHT1[2][Tm][Tn][K][K],
 						for(int tii=0;tii<custom_Tn;tii++){
 							FPGA_DATA_FIX add_res1;
 							if(too<Tm/2)
-								add_res1 = WEIGHT1[0][too][tii][i][j]*IFM[0][tii][trr+i][tcc+j];
+								add_res1 = WEIGHT1[0][too][tii][i][j]*IFM[0][tii][custom_s*trr+i][custom_s*tcc+j];
 							else
-								add_res1 = WEIGHT1[1][too][tii][i][j]*IFM[1][tii][trr+i][tcc+j];
+								add_res1 = WEIGHT1[1][too][tii][i][j]*IFM[1][tii][custom_s*trr+i][custom_s*tcc+j];
 							OFM[too][trr][tcc] = OFM[too][trr][tcc] + add_res1;
 						}
 					}
@@ -340,13 +343,14 @@ void OFM_STORE( hls::stream<DMA_DATA_128B_FIX> &output_dma_O,
 void Load_Fire(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
 		FPGA_DATA_FIX WEIGHT[2][2][Tm][Tn][K][K],
-		FPGA_DATA_FIX IFM1[2][Tn_8][Tr+K-1][Tc+K-1],
-		FPGA_DATA_FIX IFM2[2][Tn_8][Tr+K-1][Tc+K-1],
+		FPGA_DATA_FIX IFM1[2][Tn_8][2*(Tr-1)+K][2*(Tc-1)+K],   //change//Cannot replace 2 with custom_s here, could it be a problem? Same issue with K and custom_k
+		FPGA_DATA_FIX IFM2[2][Tn_8][2*(Tr-1)+K][2*(Tc-1)+K],	//change//Cannot replace 2 with custom_s here, could it be a problem? Same issue with K and custom_k
 		FPGA_DATA_FIX OFM[Tm][Tr][Tc],
 		int row,
 		int col,
 		int N,
 		int custom_k,
+		int custom_s,
 		int custom_Tr,
 		int custom_Tc,
 		int custom_Tm,
@@ -360,14 +364,14 @@ void Load_Fire(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 	for(int i=0;i<N+Tn;i+=Tn){
 #pragma HLS loop_tripcount min=192 max=192 avg=192
 #pragma HLS dependence variable=WEIGHT intra false
-		if(idx%2==0){
-			LOAD_WEIGHT_128B(input_dma_W,WEIGHT[0],custom_k,custom_Tm,custom_Tn);
-			LOAD_IFM(input_dma_I,IFM1,custom_Tr,custom_Tc,custom_k,custom_Tn);
-			FIRE(WEIGHT[1],IFM2,OFM, row, col, custom_k,custom_Tr,custom_Tc,custom_Tm,custom_Tn);
+		if(idx%2==0){   //decide the alternatively using of buffers
+			LOAD_WEIGHT_128B(input_dma_W,WEIGHT[0],custom_k,custom_s,custom_Tm,custom_Tn);
+			LOAD_IFM(input_dma_I,IFM1,custom_Tr,custom_Tc,custom_k,custom_s,custom_Tn);
+			FIRE(WEIGHT[1],IFM2,OFM, row, col, custom_k,custom_s,custom_Tr,custom_Tc,custom_Tm,custom_Tn);
 		}else{
-			LOAD_WEIGHT_128B(input_dma_W,WEIGHT[1], custom_k,custom_Tm,custom_Tn);
-			LOAD_IFM(input_dma_I,IFM2,custom_Tr,custom_Tc,custom_k,custom_Tn);
-			FIRE(WEIGHT[0],IFM1,OFM, row, col, custom_k,custom_Tr,custom_Tc,custom_Tm,custom_Tn);
+			LOAD_WEIGHT_128B(input_dma_W,WEIGHT[1], custom_k,custom_s,custom_Tm,custom_Tn);
+			LOAD_IFM(input_dma_I,IFM2,custom_Tr,custom_Tc,custom_k,custom_s,custom_Tn);
+			FIRE(WEIGHT[0],IFM1,OFM, row, col, custom_k,custom_s,custom_Tr,custom_Tc,custom_Tm,custom_Tn);
 		}
 		idx+=1;
 	}
@@ -382,6 +386,7 @@ void cconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 		int num,
 		int N,
 		int custom_k,
+		int custom_s,
 		int custom_Tr,
 		int custom_Tc,
 		int custom_Tm,
@@ -411,11 +416,13 @@ void cconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 #pragma HLS ARRAY_PARTITION variable=WEIGHT1 complete dim=4
 
 
-	static FPGA_DATA_FIX IFM[2][Tn_8][Tr+K-1][Tc+K-1];
+//	static FPGA_DATA_FIX IFM[2][Tn_8][Tr+K-1][Tc+K-1];
+	static FPGA_DATA_FIX IFM[2][Tn_8][(Tr-1)*2+K][(Tc-1)*2+K]; //change//cannot replace 2 with custom_s.static?
 #pragma HLS ARRAY_PARTITION variable=IFM complete dim=1
 #pragma HLS ARRAY_PARTITION variable=IFM complete dim=2
 
-	static FPGA_DATA_FIX IFM_DB[2][Tn_8][Tr+K-1][Tc+K-1];
+//	static FPGA_DATA_FIX IFM_DB[2][Tn_8][Tr+K-1][Tc+K-1];
+	static FPGA_DATA_FIX IFM_DB[2][Tn_8][(Tr-1)*2+K][(Tc-1)*2+K];//change//cannot replace 2 with custom_s.static?
 #pragma HLS ARRAY_PARTITION variable=IFM_DB complete dim=1
 #pragma HLS ARRAY_PARTITION variable=IFM_DB complete dim=2
 
@@ -431,12 +438,12 @@ void cconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 #pragma HLS ARRAY_PARTITION variable=BIAS complete dim=1
 	static FPGA_DATA_FIX BIAS_DB[Tm];
 #pragma HLS ARRAY_PARTITION variable=BIAS_DB complete dim=1
-
-	if(num%2==0){
-		Load_Fire(input_dma_W,input_dma_I,WEIGHT1,IFM,IFM_DB,OFM_DB,row,col,N,custom_k,custom_Tr,custom_Tc,custom_Tm,custom_Tn);
+    //Load_Fire four times,OFM_STORE one times
+	if(num%2==0){ //decide the alternatively using of buffers
+		Load_Fire(input_dma_W,input_dma_I,WEIGHT1,IFM,IFM_DB,OFM_DB,row,col,N,custom_k,custom_s,custom_Tr,custom_Tc,custom_Tm,custom_Tn);
 		OFM_STORE(output_dma_O,input_dma_B, OFM, BIAS,custom_Tr,custom_Tc,custom_Tm,NL_Opt);
 	}else{
-		Load_Fire(input_dma_W,input_dma_I,WEIGHT1,IFM,IFM_DB,OFM,row,col,N,custom_k,custom_Tr,custom_Tc,custom_Tm,custom_Tn);
+		Load_Fire(input_dma_W,input_dma_I,WEIGHT1,IFM,IFM_DB,OFM,row,col,N,custom_k,custom_s,custom_Tr,custom_Tc,custom_Tm,custom_Tn);
 		OFM_STORE(output_dma_O,input_dma_B, OFM_DB, BIAS_DB,custom_Tr,custom_Tc,custom_Tm,NL_Opt);
 	}
 

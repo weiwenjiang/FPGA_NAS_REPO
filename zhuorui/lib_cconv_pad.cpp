@@ -6,11 +6,10 @@ void cconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_B,
 		hls::stream<DMA_DATA_128B_FIX> &output_dma_O,
-		int row,int col,int num,int N,int custom_k,int custom_Tr,int custom_Tc,
+		int row,int col,int num,int N,int custom_k,int custom_s,int custom_Tr,int custom_Tc,
 		int custom_Tm,int custom_Tn,int NL_Opt);
 
-
-int stream_IFM_in(int M,int N,int R,int C,int custom_k,
+int stream_IFM_in(int M,int N,int R,int C,int custom_k,int custom_s,
 		int row, int col,
 		int ich_max, int row_max, int col_max,
 		int custom_Tr,int custom_Tc,
@@ -67,7 +66,7 @@ int stream_OFM_out_pad(int M,int N,int R,int C,int outR,int outC,int pad,
 	return 0;
 }
 
-int do_conv_pad(int M,int N,int R,int C,int outR,int outC,int pad,int c_k,
+int do_conv_pad(int M,int N,int R,int C,int outR,int outC,int pad,int c_k,int c_s,
 		FPGA_DATA_FIX * input,FPGA_DATA_FIX * weight,FPGA_DATA_FIX * output, FPGA_DATA_FIX * bias,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
@@ -79,14 +78,17 @@ int do_conv_pad(int M,int N,int R,int C,int outR,int outC,int pad,int c_k,
 	int mch = 0;
 	int row = 0;
 	int col = 0;
-	int ich_max = ceil(float(N)/Tn);
-	int mch_max = ceil(float(M)/Tm);
-	int row_max = ceil(float(R)/Tr);
-	int col_max = ceil(float(C)/Tc);
 
 	int custom_Tr;
 	int custom_Tc;
 	int custom_k = c_k;
+	int custom_s = c_s;
+
+	int ich_max = ceil(float(N)/Tn);
+	int mch_max = ceil(float(M)/Tm);
+	int row_max = ceil(float(R)/(custom_s*Tr));
+	int col_max = ceil(float(C)/(custom_s*Tc));
+
 
 	int db_flag = 0;
 
@@ -103,19 +105,19 @@ int do_conv_pad(int M,int N,int R,int C,int outR,int outC,int pad,int c_k,
 				custom_Tc = Tc;
 
 				if(row==row_max-1)
-					custom_Tr = R -custom_k+1 - row*Tr;
+					custom_Tr = (R-custom_k)/custom_s + 1 - row*Tr; //change
 				if(col==col_max-1)
-					custom_Tc = C -custom_k+1 - col*Tc;
+					custom_Tc = (C-custom_k)/custom_s + 1 - col*Tc;//change
 
 
-				stream_IFM_in(M,N,R,C,custom_k, row, col, ich_max, row_max, col_max, custom_Tr, custom_Tc, input, input_dma_I);
+				stream_IFM_in(M,N,R,C,custom_k,custom_s, row, col, ich_max, row_max, col_max, custom_Tr, custom_Tc, input, input_dma_I);
 				stream_WEI_in(M,N,custom_k,mch,ich_max,weight,input_dma_W);
 
 				stream_BIAs_in(M,N,R,C,mch-1,bias,input_dma_B);
 
 				printf("%d %d %d: %d,%d\n",mch, row, col, custom_Tr,custom_Tc);
 				cconv(input_dma_W,input_dma_I,input_dma_B,output_dma_O,\
-							0,0,db_flag,N,custom_k,custom_Tr,custom_Tc,Tm,Tn,0);
+							0,0,db_flag,N,custom_k,custom_s,custom_Tr,custom_Tc,Tm,Tn,0);
 
 				db_flag+=1;
 				stream_OFM_out_pad(M,N,R,C,outR,outC,pad, row,col,mch-1,row_max,col_max, custom_Tr, custom_Tc, output,output_dma_O);

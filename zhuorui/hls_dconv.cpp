@@ -2,7 +2,8 @@
 
 void dconv_LOAD_WEIGHT_128B(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 						FPGA_DATA_FIX WEIGHT1[2][Tn_dconv][K_dconv][K_dconv],
-						int custom_k){
+						int custom_k,
+						int custom_s){
 
 
 	DMA_DATA_128B_FIX weight_input_dma;
@@ -58,15 +59,16 @@ void dconv_LOAD_WEIGHT_128B(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 
 
 void dconv_LOAD_IFM(hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
-		FPGA_DATA_FIX IFM[2][Tn_dconv][Tr_dconv+K_dconv-1][Tc_dconv+K_dconv-1],
+		FPGA_DATA_FIX IFM[2][Tn_dconv][2*(Tr_dconv-1)+K_dconv][2*(Tc_dconv-1)+K_dconv],
 		int custom_Tr,
-		int custom_Tc){
+		int custom_Tc,
+		int custom_s){
 
 	DMA_DATA_128B_FIX ifm_input_dma;
 	ifm1:for(int i=0;i<divided_Tn_8_dconv;i++){
-		ifm2:for(int j=0;j<custom_Tr+K_dconv-1;j++){
-			ifm3:for(int m=0;m<custom_Tc+K_dconv-1;m++){
-#pragma HLS PIPELINE II=1
+		ifm2:for(int j=0;j<(custom_Tr-1)*custom_s+K_dconv;j++){			//change
+			ifm3:for(int m=0;m<(custom_Tc-1)*custom_s+K_dconv;m++){		//change
+	#pragma HLS PIPELINE II=1
 				ifm_input_dma=input_dma_I.read();
 				if(i*8<Tn_dconv){
 					IFM[0][i*8][j][m]=ifm_input_dma.data.data1;
@@ -107,11 +109,12 @@ void dconv_LOAD_IFM(hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
 
 
 void dconv_FIRE(  FPGA_DATA_FIX WEIGHT1[2][Tn_dconv][K_dconv][K_dconv],
-			FPGA_DATA_FIX IFM[2][Tn_dconv][Tr_dconv+K_dconv-1][Tc_dconv+K_dconv-1],
+			FPGA_DATA_FIX IFM[2][Tn_dconv][2*(Tr_dconv-1)+K_dconv][2*(Tc_dconv-1)+K_dconv],
 			FPGA_DATA_FIX OFM[Tn_dconv][Tr_dconv][Tc_dconv],
 			int row,
 			int col,
 			int custom_k,
+			int custom_s,
 			int custom_Tr,
 			int custom_Tc){
 	for(int i=0;i<custom_k;i++){
@@ -127,9 +130,9 @@ void dconv_FIRE(  FPGA_DATA_FIX WEIGHT1[2][Tn_dconv][K_dconv][K_dconv],
 					for(int tii=0;tii<Tn_dconv;tii++){
 						FPGA_DATA_FIX add_res1;
 						if(tii<Tn_dconv/2)
-							add_res1 = WEIGHT1[0][tii][i][j]*IFM[0][tii][trr+i][tcc+j];
+							add_res1 = WEIGHT1[0][tii][i][j]*IFM[0][tii][custom_s*trr+i][custom_s*tcc+j];
 						else
-							add_res1 = WEIGHT1[1][tii][i][j]*IFM[1][tii][trr+i][tcc+j];
+							add_res1 = WEIGHT1[1][tii][i][j]*IFM[1][tii][custom_s*trr+i][custom_s*tcc+j];
 						OFM[tii][trr][tcc] = OFM[tii][trr][tcc] + add_res1;
 					}
 				}
@@ -308,13 +311,14 @@ void dconv_OFM_STORE( hls::stream<DMA_DATA_128B_FIX> &output_dma_O,
 void dconv_Load_Fire(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
 		FPGA_DATA_FIX WEIGHT[2][2][Tn_dconv][K_dconv][K_dconv],
-		FPGA_DATA_FIX IFM1[2][Tn_dconv][Tr_dconv+K_dconv-1][Tc_dconv+K_dconv-1],
-		FPGA_DATA_FIX IFM2[2][Tn_dconv][Tr_dconv+K_dconv-1][Tc_dconv+K_dconv-1],
+		FPGA_DATA_FIX IFM1[2][Tn_dconv][2*(Tr_dconv-1)+K_dconv][2*(Tc_dconv-1)+K_dconv],
+		FPGA_DATA_FIX IFM2[2][Tn_dconv][2*(Tr_dconv-1)+K_dconv][2*(Tc_dconv-1)+K_dconv],
 		FPGA_DATA_FIX OFM[Tn_dconv][Tr_dconv][Tc_dconv],
 		int row,
 		int col,
 		int N,
 		int custom_k,
+		int custom_s,
 		int custom_Tr,
 		int custom_Tc
 		){
@@ -323,9 +327,9 @@ void dconv_Load_Fire(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 //#pragma HLS loop_tripcount min=192 max=192 avg=192
 //#pragma HLS dependence variable=WEIGHT intra false
 //	if(idx%2==0){
-		dconv_LOAD_WEIGHT_128B(input_dma_W,WEIGHT[0],custom_k);
-		dconv_LOAD_IFM(input_dma_I,IFM1,custom_Tr,custom_Tc);
-		dconv_FIRE(WEIGHT[0],IFM1,OFM, row, col, custom_k,custom_Tr,custom_Tc);
+		dconv_LOAD_WEIGHT_128B(input_dma_W,WEIGHT[0],custom_k,custom_s);
+		dconv_LOAD_IFM(input_dma_I,IFM1,custom_Tr,custom_Tc,custom_s);
+		dconv_FIRE(WEIGHT[0],IFM1,OFM, row, col, custom_k,custom_s,custom_Tr,custom_Tc);
 //		dconv_FIRE(WEIGHT[1],IFM2,OFM, row, col, custom_k,custom_Tr,custom_Tc);
 //	}else{
 //		dconv_LOAD_WEIGHT_128B(input_dma_W,WEIGHT[1], custom_k);
@@ -345,6 +349,7 @@ void dconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 		int num,
 		int N,
 		int custom_k,
+		int custom_s,
 		int custom_Tr,
 		int custom_Tc,
 		int NL_Opt
@@ -369,11 +374,11 @@ void dconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 #pragma HLS ARRAY_PARTITION variable=WEIGHT1 complete dim=3
 
 
-	static FPGA_DATA_FIX IFM[2][Tn_dconv][Tr_dconv+K_dconv-1][Tc_dconv+K_dconv-1];
+	static FPGA_DATA_FIX IFM[2][Tn_dconv][2*(Tr_dconv-1)+K_dconv][2*(Tc_dconv-1)+K_dconv];
 #pragma HLS ARRAY_PARTITION variable=IFM complete dim=1
 #pragma HLS ARRAY_PARTITION variable=IFM complete dim=2
 
-	static FPGA_DATA_FIX IFM_DB[2][Tn_dconv][Tr_dconv+K_dconv-1][Tc_dconv+K_dconv-1];
+	static FPGA_DATA_FIX IFM_DB[2][Tn_dconv][2*(Tr_dconv-1)+K_dconv][2*(Tc_dconv-1)+K_dconv];
 #pragma HLS ARRAY_PARTITION variable=IFM_DB complete dim=1
 #pragma HLS ARRAY_PARTITION variable=IFM_DB complete dim=2
 
@@ -391,10 +396,10 @@ void dconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 #pragma HLS ARRAY_PARTITION variable=BIAS_DB complete dim=1
 
 	if(num%2==0){
-		dconv_Load_Fire(input_dma_W,input_dma_I,WEIGHT1,IFM,IFM_DB,OFM_DB,row,col,N,custom_k,custom_Tr,custom_Tc);
+		dconv_Load_Fire(input_dma_W,input_dma_I,WEIGHT1,IFM,IFM_DB,OFM_DB,row,col,N,custom_k,custom_s,custom_Tr,custom_Tc);
 		dconv_OFM_STORE(output_dma_O,input_dma_B, OFM, BIAS,custom_Tr,custom_Tc,NL_Opt);
 	}else{
-		dconv_Load_Fire(input_dma_W,input_dma_I,WEIGHT1,IFM,IFM_DB,OFM,row,col,N,custom_k,custom_Tr,custom_Tc);
+		dconv_Load_Fire(input_dma_W,input_dma_I,WEIGHT1,IFM,IFM_DB,OFM,row,col,N,custom_k,custom_s,custom_Tr,custom_Tc);
 		dconv_OFM_STORE(output_dma_O,input_dma_B, OFM_DB, BIAS_DB,custom_Tr,custom_Tc,NL_Opt);
 	}
 

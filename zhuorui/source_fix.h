@@ -72,8 +72,8 @@ const int CH17 = 160;
 const int CH18 = 160;
 const int CH19 = 320;
 
-const int R = 3;
-const int C = 3;
+const int R = 64;
+const int C = 64;
 const int K = 3;
 
 typedef float FPGA_DATA;
