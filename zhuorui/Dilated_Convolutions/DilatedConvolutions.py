@@ -6,19 +6,19 @@ import torch.nn.functional as F
 
 M = 32
 N = 32
-R = 32  #行数
-C = 32  #列数
+R = 32  
+C = 32  
 K = 3   # kernel size
 
 class SimpleCNN(torch.nn.Module):
 
     def __init__(self):
         super(SimpleCNN, self).__init__()
-        self.conv1 = torch.nn.Conv2d(M, N, kernel_size=K, stride=1, padding=0,dilation=2)
+        self.conv1 = torch.nn.Conv2d(M, N, kernel_size=K, stride=1, padding=0,dilation=6)
 
 
     def forward(self, x):
-        x = self.conv1(x) #括号里的x相当于IFM，=右边的相当于OFM
+        x = self.conv1(x)
         return(x)
 
 CNN = SimpleCNN()
@@ -32,7 +32,7 @@ CNN.state_dict()["conv1.weight"][:] = weight_1
 CNN.state_dict()["conv1.bias"][:] = bias_1
 
 
-ofm = CNN(ifm)  #相当于CNN.forward
+ofm = CNN(ifm)  #CNN.forward
 
 # for name, param in CNN.state_dict().items():
 #    print(name,param)

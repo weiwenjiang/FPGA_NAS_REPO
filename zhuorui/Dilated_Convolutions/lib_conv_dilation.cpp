@@ -10,7 +10,7 @@ int dconv_main();
 int bn_main();
 int bilinear_main();
 
-void cconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
+void cconv_dilation(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_B,
 		hls::stream<DMA_DATA_128B_FIX> &output_dma_O,
@@ -185,7 +185,7 @@ int do_conv(int M,int N,int R,int C, int K1,int dilation,
 				stream_BIAs_in(M,N,R,C,mch-1,bias,input_dma_B);
 
 				printf("%d %d %d: %d,%d\n",mch, row, col, custom_Tr,custom_Tc);
-				cconv(input_dma_W,input_dma_I,input_dma_B,output_dma_O,\
+				cconv_dilation(input_dma_W,input_dma_I,input_dma_B,output_dma_O,\
 							0,0,db_flag,N,custom_k,custom_Tr,custom_Tc,Tm,Tn,0,K1,dilation);
 
 				db_flag+=1;

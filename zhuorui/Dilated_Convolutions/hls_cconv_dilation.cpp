@@ -367,7 +367,7 @@ void Load_Fire(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 	}
 }
 
-void cconv(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
+void cconv_dilation(hls::stream<DMA_DATA_128B_FIX> &input_dma_W,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_I,
 		hls::stream<DMA_DATA_128B_FIX> &input_dma_B,
 		hls::stream<DMA_DATA_128B_FIX> &output_dma_O,
