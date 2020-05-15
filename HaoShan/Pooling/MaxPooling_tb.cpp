@@ -58,19 +58,5 @@ int main(){
 		printf("\n");
 	}
 
-	printf("my output:\n");
-	for(int m=0;m<N;m++){
-		for(int r=0;r<real_R;r++){
-			for(int c=0;c<real_C;c++){
-				FPGA_DATA_FIX res;
-				res = stage1_pool_output[m*(real_R)*(real_C) + r*(real_C) + c];
-				std::cout << res <<" ";
-			}
-			printf("\n");
-		}
-		printf("========%d==========\n",m);
-		printf("\n");
-	}
-
 	return 0;
 }
